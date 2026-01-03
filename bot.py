@@ -5,7 +5,7 @@ import os
 
 # ================== CONFIG ==================
 
-TOKEN = "DISCORD_BOT_TOKEN"
+TOKEN = os.getenv("DISCORD_TOKEN")
 PREFIX = "!"
 SIGNUP_CHANNEL_ID = 1456720618329210995
 SIGNUP_MESSAGE_ID = 1456968992215404590
@@ -265,11 +265,77 @@ async def coop(ctx):
     await ctx.author.send("Wähle deinen Coop-Slot:", view=CoopView(ctx.author, ctx.guild))
     await ctx.message.delete()
 
+# ================== ADMIN COMMANDS ==================
+
+def is_admin(ctx):
+    return ctx.author.guild_permissions.administrator
+
+@bot.command(name="clear")
+async def clear_all(ctx, *, arg=None):
+    if not is_admin(ctx):
+        await ctx.send("Nur Admins können diesen Befehl ausführen.")
+        return
+    if arg != "all":
+        await ctx.send("Verwendung: `!clear all`")
+        return
+
+    save_data(DATA_FILE, {})
+    save_data(COOPS_FILE, {})
+    await update_signup_message(ctx.guild)
+    await ctx.send("Alle Signups und Coops wurden gelöscht ✅")
+
+@bot.command(name="forceadd")
+async def force_add(ctx, member: discord.Member, *, country):
+    if not is_admin(ctx):
+        await ctx.send("Nur Admins können diesen Befehl ausführen.")
+        return
+
+    if country not in ALL_COUNTRIES:
+        await ctx.send(f"Ungültiges Land: {country}")
+        return
+
+    signups = load_data(DATA_FILE)
+    signups[str(member.id)] = country
+    save_data(DATA_FILE, signups)
+    await update_signup_message(ctx.guild)
+    await ctx.send(f"{member} wurde als Main-Spieler von {country} hinzugefügt ✅")
+
+@bot.command(name="forceremove")
+async def force_remove(ctx, member: discord.Member):
+    if not is_admin(ctx):
+        await ctx.send("Nur Admins können diesen Befehl ausführen.")
+        return
+
+    uid = str(member.id)
+    signups = load_data(DATA_FILE)
+    coops = load_data(COOPS_FILE)
+    removed = False
+
+    if uid in signups:
+        del signups[uid]
+        removed = True
+
+    for country, lst in list(coops.items()):
+        if int(uid) in lst:
+            lst.remove(int(uid))
+            if not lst:
+                del coops[country]
+            removed = True
+
+    save_data(DATA_FILE, signups)
+    save_data(COOPS_FILE, coops)
+    await update_signup_message(ctx.guild)
+
+    if removed:
+        await ctx.send(f"{member} wurde entfernt ✅")
+    else:
+        await ctx.send(f"{member} war nicht angemeldet ❌")
+
 # ================== EVENTS ==================
 
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
 
-TOKEN = os.getenv("DISCORD_TOKEN")
 bot.run(TOKEN)
+
