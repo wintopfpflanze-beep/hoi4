@@ -271,4 +271,5 @@ async def coop(ctx):
 async def on_ready():
     print(f"Logged in as {bot.user}")
 
-bot.run("DISCORD_BOT_TOKEN")
+TOKEN = os.getenv("DISCORD_TOKEN")
+bot.run("TOKEN")
