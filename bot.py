@@ -5,7 +5,7 @@ import os
 
 # ================== CONFIG ==================
 
-TOKEN = "MTQ1NjY3OTY5MDE5MzYwMDU0Mg.GZXkE9.uVox3ZZlSVM0O6u-EIUuknREyaiWoxgrT1Oekc"
+TOKEN = "DISCORD_BOT_TOKEN"
 PREFIX = "!"
 SIGNUP_CHANNEL_ID = 1456720618329210995
 SIGNUP_MESSAGE_ID = 1456968992215404590
@@ -271,4 +271,4 @@ async def coop(ctx):
 async def on_ready():
     print(f"Logged in as {bot.user}")
 
-bot.run("MTQ1NjY3OTY5MDE5MzYwMDU0Mg.GZXkE9.uVox3ZZlSVM0O6u-EIUuknREyaiWoxgrT1Oekc")
+bot.run("DISCORD_BOT_TOKEN")
