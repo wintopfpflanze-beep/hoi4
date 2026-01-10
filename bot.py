@@ -98,11 +98,12 @@ async def update_signup_message(guild):
     backups = load_data(BACKUP_FILE)
 
     def line(country):
-        main = next((u for u, c in signups.items() if c == country), None)
+        main_id = next((int(uid) for uid, c in signups.items() if c == country), None)
+        coop_ids = coops.get(country, [])
         mentions = []
-        if main:
-            mentions.append(f"<@{main}>")
-        mentions += [f"<@{cid}>" for cid in coops.get(country, [])]
+        if main_id:
+            mentions.append(f"<@{main_id}>")
+        mentions += [f"<@{int(cid)}>" for cid in coop_ids]
         return f"{country}: {', '.join(mentions)}" if mentions else f"{country}:"
 
     content = (
@@ -115,7 +116,7 @@ async def update_signup_message(guild):
     )
 
     if backups:
-        content += "\n\n**Backup:**\n" + "\n".join(f"<@{uid}>" for uid in backups)
+        content += "\n\n**Backup:**\n" + "\n".join(f"<@{int(uid)}>" for uid in backups)
 
     await msg.edit(content=content)
 
