@@ -23,21 +23,19 @@ ROLE_ALLIES = "Allies"
 
 # ================== LÄNDER ==================
 
-ALL_COUNTRIES = [
+AXIS_COUNTRIES = [
     "Deutschland", "Italien", "Rumänien", "Spanien", "Ungarn",
     "Bulgarien", "Finnland", "Jugoslawien",
-    "Japan", "Mandschukuo", "Siam",
-    "UdSSR", "Mongolei",
-    "Großbritannien", "USA", "Frankreich", "Kanada", "Südafrika",
-    "Indien", "Australien", "Neuseeland", "Mexiko"
+    "Japan", "Mandschukuo", "Siam"
 ]
 
-AXIS = ["Deutschland", "Italien", "Rumänien", "Spanien", "Ungarn",
-        "Bulgarien", "Finnland", "Jugoslawien",
-        "Japan", "Mandschukuo", "Siam"]
+ALLIES_COUNTRIES = [
+    "Großbritannien", "USA", "Frankreich", "Kanada", "Südafrika",
+    "Indien", "Australien", "Neuseeland", "Mexiko",
+    "UdSSR", "Mongolei"
+]
 
-ALLIES = ["Großbritannien", "USA", "Frankreich", "Kanada", "Südafrika",
-          "Indien", "Australien", "Neuseeland", "Mexiko", "UdSSR", "Mongolei"]
+ALL_COUNTRIES = AXIS_COUNTRIES + ALLIES_COUNTRIES
 
 MAJOR_COUNTRIES = ["Deutschland", "USA", "UdSSR"]
 MID_MAJORS = ["Italien", "Großbritannien", "Frankreich", "Japan"]
@@ -64,11 +62,25 @@ def save_data(file, data):
     with open(file, "w") as f:
         json.dump(data, f, indent=4)
 
+# ================== HELPERS ==================
+
+def signup_allowed():
+    return signup_enabled
+
+def has_role(member, role_name):
+    return any(r.name == role_name for r in member.roles)
+
 # ================== SIGNUP MESSAGE ==================
 
 async def update_signup_message(guild):
     channel = guild.get_channel(SIGNUP_CHANNEL_ID)
-    message = await channel.fetch_message(SIGNUP_MESSAGE_ID)
+    if not channel:
+        return
+
+    try:
+        message = await channel.fetch_message(SIGNUP_MESSAGE_ID)
+    except discord.NotFound:
+        return
 
     signups = load_data(DATA_FILE)
     coops = load_data(COOPS_FILE)
@@ -83,12 +95,12 @@ async def update_signup_message(guild):
         return f"{country}: {', '.join(mentions)}" if mentions else f"{country}:"
 
     content = (
-        "**Achsenmächte:**\n" +
-        "\n".join(line(c) for c in AXIS if c not in ["Japan", "Mandschukuo", "Siam"]) +
-        "\n\n**Japan-Team:**\n" +
-        "\n".join(line(c) for c in ["Japan", "Mandschukuo", "Siam"]) +
-        "\n\n**Alliierte & Komintern:**\n" +
-        "\n".join(line(c) for c in ALLIES)
+        "**Achsenmächte:**\n"
+        + "\n".join(line(c) for c in AXIS_COUNTRIES if c not in ["Japan", "Mandschukuo", "Siam"])
+        + "\n\n**Japan-Team:**\n"
+        + "\n".join(line(c) for c in ["Japan", "Mandschukuo", "Siam"])
+        + "\n\n**Alliierte & Komintern:**\n"
+        + "\n".join(line(c) for c in ALLIES_COUNTRIES)
     )
 
     if backups:
@@ -96,48 +108,95 @@ async def update_signup_message(guild):
 
     await message.edit(content=content)
 
-# ================== ROLE HELPERS ==================
+# ================== ROLE HANDLING ==================
 
-async def update_player_role(member, country=None, remove=False):
-    if not member:
-        return
-    if country in AXIS:
+async def apply_role(member, country):
+    if country in AXIS_COUNTRIES:
         role = discord.utils.get(member.guild.roles, name=ROLE_ACHSE)
     else:
         role = discord.utils.get(member.guild.roles, name=ROLE_ALLIES)
-
-    if remove:
-        await member.remove_roles(role)
-    else:
+    if role:
         await member.add_roles(role)
+
+async def remove_roles(member):
+    for role_name in [ROLE_ACHSE, ROLE_ALLIES]:
+        role = discord.utils.get(member.guild.roles, name=role_name)
+        if role and role in member.roles:
+            await member.remove_roles(role)
+
+# ================== SIGNUP ==================
+
+def get_available_countries(member):
+    roles = [r.name for r in member.roles]
+    if ROLE_MAYOR_WUERDIG in roles:
+        return ALL_COUNTRIES
+    if ROLE_KLEINE_MAYORS in roles:
+        return SMALL_COUNTRIES + MID_MAJORS
+    return SMALL_COUNTRIES
+
+class CountrySelect(discord.ui.Select):
+    def __init__(self, user, guild):
+        self.user = user
+        self.guild = guild
+        options = [discord.SelectOption(label=c) for c in get_available_countries(user)]
+        super().__init__(placeholder="Wähle dein Land", options=options)
+
+    async def callback(self, interaction):
+        if not signup_allowed():
+            await interaction.response.send_message("❌ Anmeldung ist deaktiviert.", ephemeral=True)
+            return
+
+        signups = load_data(DATA_FILE)
+        uid = str(self.user.id)
+
+        if uid in signups:
+            await interaction.response.send_message("Du bist bereits angemeldet.", ephemeral=True)
+            return
+
+        country = self.values[0]
+        if country in signups.values():
+            await interaction.response.send_message("Land bereits vergeben.", ephemeral=True)
+            return
+
+        signups[uid] = country
+        save_data(DATA_FILE, signups)
+
+        await apply_role(self.user, country)
+        await update_signup_message(self.guild)
+        await interaction.response.edit_message(content=f"Angemeldet als **{country}**.", view=None)
+
+class CountryView(discord.ui.View):
+    def __init__(self, user, guild):
+        super().__init__(timeout=120)
+        self.add_item(CountrySelect(user, guild))
+
+@bot.command()
+async def signup(ctx):
+    if not signup_allowed():
+        await ctx.reply("❌ Anmeldung ist deaktiviert.")
+        return
+    await ctx.author.send("Bitte wähle dein Land:", view=CountryView(ctx.author, ctx.guild))
+    await ctx.message.delete()
 
 # ================== BACKUP ==================
 
 @bot.command()
 async def backup(ctx):
-    if not signup_enabled:
+    if not signup_allowed():
+        await ctx.reply("❌ Anmeldung ist deaktiviert.")
         return
+
     backups = load_data(BACKUP_FILE)
-    backups[str(ctx.author.id)] = True
+    uid = str(ctx.author.id)
+
+    if uid in backups:
+        await ctx.reply("Du bist bereits Backup.")
+        return
+
+    backups[uid] = True
     save_data(BACKUP_FILE, backups)
     await update_signup_message(ctx.guild)
     await ctx.message.delete()
-
-# ================== SIGNUP ON/OFF ==================
-
-@bot.command()
-@commands.has_role(ROLE_CHEF)
-async def signupoff(ctx):
-    global signup_enabled
-    signup_enabled = False
-    await ctx.send("Anmeldung deaktiviert ❌")
-
-@bot.command()
-@commands.has_role(ROLE_CHEF)
-async def signupon(ctx):
-    global signup_enabled
-    signup_enabled = True
-    await ctx.send("Anmeldung aktiviert ✅")
 
 # ================== UNSIGN ==================
 
@@ -149,23 +208,37 @@ async def unsign(ctx):
     backups = load_data(BACKUP_FILE)
 
     if uid in signups:
-        country = signups[uid]
         del signups[uid]
-        await update_player_role(ctx.author, country, remove=True)
 
     backups.pop(uid, None)
 
     for c, lst in list(coops.items()):
         if ctx.author.id in lst:
             lst.remove(ctx.author.id)
-            await update_player_role(ctx.author, c, remove=True)
 
     save_data(DATA_FILE, signups)
     save_data(COOPS_FILE, coops)
     save_data(BACKUP_FILE, backups)
 
+    await remove_roles(ctx.author)
     await update_signup_message(ctx.guild)
-    await ctx.author.send("Du wurdest entfernt.")
+    await ctx.author.send("Du wurdest vollständig abgemeldet.")
+
+# ================== SIGNUP ON / OFF ==================
+
+@bot.command()
+@commands.has_role(ROLE_CHEF)
+async def signupoff(ctx):
+    global signup_enabled
+    signup_enabled = False
+    await ctx.send("❌ Anmeldung deaktiviert.")
+
+@bot.command()
+@commands.has_role(ROLE_CHEF)
+async def signupon(ctx):
+    global signup_enabled
+    signup_enabled = True
+    await ctx.send("✅ Anmeldung aktiviert.")
 
 # ================== GAMEOVER ==================
 
@@ -180,6 +253,7 @@ async def gameover(ctx):
         return [m for m in guild.members if role in m.roles]
 
     dm = await chef.create_dm()
+
     await dm.send("Welches Datum ist heute?")
     date = (await bot.wait_for("message", check=lambda m: m.author == chef)).content
 
@@ -202,10 +276,10 @@ async def gameover(ctx):
         placeholder="Wer hat gewonnen?",
         options=[discord.SelectOption(label="Achse"), discord.SelectOption(label="Allies")]
     )
-    view = discord.ui.View()
-    view.add_item(win_select)
-    await dm.send("Wer hat gewonnen?", view=view)
-    await view.wait()
+    win_view = discord.ui.View()
+    win_view.add_item(win_select)
+    await dm.send("Wer hat gewonnen?", view=win_view)
+    await win_view.wait()
     winner = win_select.values[0]
 
     src = await guild.get_channel(SIGNUP_CHANNEL_ID).fetch_message(SIGNUP_MESSAGE_ID)
@@ -222,10 +296,8 @@ async def gameover(ctx):
 
     await target.send(text)
 
-    for m in members_with(ROLE_ACHSE):
-        await m.remove_roles(discord.utils.get(guild.roles, name=ROLE_ACHSE))
-    for m in members_with(ROLE_ALLIES):
-        await m.remove_roles(discord.utils.get(guild.roles, name=ROLE_ALLIES))
+    for m in members_with(ROLE_ACHSE) + members_with(ROLE_ALLIES):
+        await remove_roles(m)
 
 # ================== READY ==================
 
@@ -235,5 +307,4 @@ async def on_ready():
 
 bot.run(TOKEN)
 
-bot.run(TOKEN)
 
