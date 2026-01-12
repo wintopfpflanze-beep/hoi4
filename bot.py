@@ -14,6 +14,10 @@ DATA_FILE = "signups.json"
 ROLE_KLEINE_MAYORS = "kleine Mayors"
 ROLE_MAYOR_WUERDIG = "Mayor würdig"
 ROLE_CHEF = "chef"
+ROLE_ACHSE = "Achse"
+ROLE_ALLIES = "Allies"
+ROLE_KOMINTERN = "Komintern"
+ROLE_JAPAN = "Japan und co"
 
 # ================== LÄNDER ==================
 
@@ -38,24 +42,28 @@ SMALL_COUNTRIES = [
 
 FACTIONS = {
     "Achsenmächte": {
-        "emoji": "🟥",
+        "emoji": "⬛",
         "color": discord.Color.dark_red(),
-        "countries": ["Deutschland", "Italien", "Rumänien", "Spanien", "Ungarn", "Bulgarien", "Finnland", "Jugoslawien"]
+        "countries": ["Deutschland", "Italien", "Rumänien", "Spanien", "Ungarn", "Bulgarien", "Finnland", "Jugoslawien"],
+        "team_role": ROLE_AXIS
     },
     "Japan-Team": {
         "emoji": "🟨",
         "color": discord.Color.gold(),
-        "countries": ["Japan", "Mandschukuo", "Siam"]
+        "countries": ["Japan", "Mandschukuo", "Siam"],
+        "team_role": ROLE_JAPAN
     },
     "Komintern": {
-        "emoji": "🟪",
+        "emoji": "🟥",
         "color": discord.Color.purple(),
-        "countries": ["UdSSR", "Mongolei"]
+        "countries": ["UdSSR", "Mongolei"],
+        "team_role": ROLE_KOMINTERN 
     },
     "Alliierte": {
         "emoji": "🟦",
         "color": discord.Color.blue(),
-        "countries": ["Großbritannien", "USA", "Frankreich", "Kanada", "Südafrika", "Indien", "Australien", "Neuseeland", "Mexiko"]
+        "countries": ["Großbritannien", "USA", "Frankreich", "Kanada", "Südafrika", "Indien", "Australien", "Neuseeland", "Mexiko"],
+        "team_role": ROLE_ALLIES
     }
 }
 
