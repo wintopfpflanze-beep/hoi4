@@ -359,6 +359,37 @@ class CoopView(discord.ui.View):
 async def coop(ctx):
     await ctx.author.send("Wähle deinen Coop-Slot:", view=CoopView(ctx.author, ctx.guild))
     await ctx.message.delete()
+
+#!unsign
+@bot.command()
+async def unsign(ctx):
+    uid = str(ctx.author.id)
+    signups = load_data(DATA_FILE)
+    coops = load_data(COOPS_FILE)
+
+    removed = False
+
+    if uid in signups:
+        del signups[uid]
+        save_data(DATA_FILE, signups)
+        removed = True
+
+    for country, lst in list(coops.items()):
+        if int(uid) in lst:
+            lst.remove(int(uid))
+            if not lst:
+                del coops[country]
+            removed = True
+
+    save_data(COOPS_FILE, coops)
+
+    if not removed:
+        await ctx.author.send("Du bist weder Main-Spieler noch Coop.")
+        return
+
+    await update_signup_message(ctx.guild)
+    await ctx.author.send("Du wurdest erfolgreich entfernt.")
+
 # ================== EVENTS ==================
 
 @bot.event
