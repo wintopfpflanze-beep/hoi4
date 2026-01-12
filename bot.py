@@ -65,45 +65,30 @@ def save_data(data):
         json.dump(data, f, indent=4)
 
 # ================== MESSAGE UPDATE ==================
-async def callback(self, interaction: discord.Interaction):
-    if interaction.user.id != self.user.id:
-        await interaction.response.send_message("❌ Nicht dein Menü.", ephemeral=True)
-        return
 
-    # ⏳ Interaction sofort bestätigen
-    await interaction.response.defer()
+async def update_signup_message(guild):
+    channel = guild.get_channel(SIGNUP_CHANNEL_ID)
+    if not channel:
+        return
+    try:
+        message = await channel.fetch_message(SIGNUP_MESSAGE_ID)
+    except discord.NotFound:
+        return
 
     data = load_data()
-    uid = str(self.user.id)
-    country = self.values[0]
 
-    if uid in data:
-        await interaction.followup.send("Du bist bereits angemeldet.", ephemeral=True)
-        return
+    def line(country):
+        uid = next((u for u, c in data.items() if c == country), None)
+        return f"{country}: <@{uid}>" if uid else f"{country}:"
 
-    if country in data.values():
-        await interaction.followup.send("Land bereits vergeben.", ephemeral=True)
-        return
+    content = ""
+    for faction_name, faction in FACTIONS.items():
+        content += f"**{faction_name}:**\n"
+        for c in faction["countries"]:
+            content += line(c) + "\n"
+        content += "\n"
 
-    # 💾 speichern
-    data[uid] = country
-    save_data(data)
-
-    # 🎭 Rolle vergeben (unabhängig)
-    role = discord.utils.get(self.guild.roles, name=self.faction["role"])
-    if role:
-        await self.user.add_roles(role, reason="Signup Faction")
-
-    await update_signup_message(self.guild)
-
-    # ✅ DM aktualisieren
-    await interaction.followup.edit_message(
-        interaction.message.id,
-        content=f"✅ Angemeldet als **{country}**\n🎭 Rolle **{self.faction['role']}** erhalten",
-        embed=None,
-        view=None
-    )
-
+    await message.edit(content=content)
 
 # ================== SIGNUP UI ==================
 
@@ -116,31 +101,43 @@ class SignupCountrySelect(discord.ui.Select):
         super().__init__(placeholder="Wähle dein Land", options=options)
 
     async def callback(self, interaction: discord.Interaction):
+        # ❌ Prüfen, ob es der richtige User ist
         if interaction.user.id != self.user.id:
             await interaction.response.send_message("❌ Nicht dein Menü.", ephemeral=True)
             return
+
+        # ⏳ Interaction sofort bestätigen
+        await interaction.response.defer()
 
         data = load_data()
         uid = str(self.user.id)
         country = self.values[0]
 
+        # Prüfen, ob der User bereits angemeldet ist
         if uid in data:
-            await interaction.response.send_message("Du bist bereits angemeldet.", ephemeral=True)
-            return
-        if country in data.values():
-            await interaction.response.send_message("Land bereits vergeben.", ephemeral=True)
+            await interaction.followup.send("Du bist bereits angemeldet.", ephemeral=True)
             return
 
+        # Prüfen, ob das Land schon vergeben ist
+        if country in data.values():
+            await interaction.followup.send("Land bereits vergeben.", ephemeral=True)
+            return
+
+        # 💾 Speichern
         data[uid] = country
         save_data(data)
 
+        # 🎭 Rolle vergeben
         role = discord.utils.get(self.guild.roles, name=self.faction["role"])
         if role:
             await self.user.add_roles(role, reason="Signup Faction")
 
+        # Signup-Nachricht aktualisieren
         await update_signup_message(self.guild)
 
-        await interaction.response.edit_message(
+        # ✅ DM aktualisieren
+        await interaction.followup.edit_message(
+            interaction.message.id,
             content=f"✅ Angemeldet als **{country}**\n🎭 Rolle **{self.faction['role']}** erhalten",
             embed=None,
             view=None
