@@ -65,30 +65,45 @@ def save_data(data):
         json.dump(data, f, indent=4)
 
 # ================== MESSAGE UPDATE ==================
+async def callback(self, interaction: discord.Interaction):
+    if interaction.user.id != self.user.id:
+        await interaction.response.send_message("❌ Nicht dein Menü.", ephemeral=True)
+        return
 
-async def update_signup_message(guild):
-    channel = guild.get_channel(SIGNUP_CHANNEL_ID)
-    if not channel:
-        return
-    try:
-        message = await channel.fetch_message(SIGNUP_MESSAGE_ID)
-    except discord.NotFound:
-        return
+    # ⏳ Interaction sofort bestätigen
+    await interaction.response.defer()
 
     data = load_data()
+    uid = str(self.user.id)
+    country = self.values[0]
 
-    def line(country):
-        uid = next((u for u, c in data.items() if c == country), None)
-        return f"{country}: <@{uid}>" if uid else f"{country}:"
+    if uid in data:
+        await interaction.followup.send("Du bist bereits angemeldet.", ephemeral=True)
+        return
 
-    content = ""
-    for faction_name, faction in FACTIONS.items():
-        content += f"**{faction_name}:**\n"
-        for c in faction["countries"]:
-            content += line(c) + "\n"
-        content += "\n"
+    if country in data.values():
+        await interaction.followup.send("Land bereits vergeben.", ephemeral=True)
+        return
 
-    await message.edit(content=content)
+    # 💾 speichern
+    data[uid] = country
+    save_data(data)
+
+    # 🎭 Rolle vergeben (unabhängig)
+    role = discord.utils.get(self.guild.roles, name=self.faction["role"])
+    if role:
+        await self.user.add_roles(role, reason="Signup Faction")
+
+    await update_signup_message(self.guild)
+
+    # ✅ DM aktualisieren
+    await interaction.followup.edit_message(
+        interaction.message.id,
+        content=f"✅ Angemeldet als **{country}**\n🎭 Rolle **{self.faction['role']}** erhalten",
+        embed=None,
+        view=None
+    )
+
 
 # ================== SIGNUP UI ==================
 
