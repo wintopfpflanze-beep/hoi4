@@ -213,6 +213,35 @@ async def unsign(ctx):
 
     await update_signup_message(ctx.guild)
     await ctx.author.send("❌ Anmeldung aufgehoben & Rollen entfernt.")
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def clearall(ctx):
+    """Löscht alle Anmeldungen und entfernt alle Rollen."""
+    data = load_data()
+    
+    if not data:
+        await ctx.send("Keine Anmeldungen vorhanden.")
+        return
+
+    # Alle angemeldeten User im Server holen
+    guild = ctx.guild
+    roles_to_remove = [ROLE_AXIS, ROLE_ALLIES, ROLE_KOMINTERN, ROLE_JAPAN]
+
+    for member_id in data.keys():
+        member = guild.get_member(int(member_id))
+        if member:
+            # Rollen entfernen
+            to_remove = [r for r in guild.roles if r.name in roles_to_remove and r in member.roles]
+            if to_remove:
+                await member.remove_roles(*to_remove, reason="ClearAll")
+
+    # JSON leeren
+    save_data({})
+
+    # Signup-Nachricht aktualisieren
+    await update_signup_message(guild)
+
+    await ctx.send("✅ Alle Anmeldungen und Rollen wurden entfernt.")
 
 # ================== EVENTS ==================
 
