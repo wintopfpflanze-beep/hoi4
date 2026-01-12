@@ -9,12 +9,18 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 PREFIX = "!"
 SIGNUP_CHANNEL_ID = 1456720618329210995
 SIGNUP_MESSAGE_ID = 1456968992215404590
+
 DATA_FILE = "signups.json"
 COOPS_FILE = "coops.json"
+BACKUP_FILE = "backups.json"
 
 ROLE_KLEINE_MAYORS = "kleine Mayors"
 ROLE_MAYOR_WUERDIG = "Mayor würdig"
 ROLE_CHEF = "Chef"
+ROLE_ACHSE = "Achse"
+ROLE_ALLIES = "Allies"
+
+signup_enabled = True
 
 # ================== LÄNDER ==================
 
@@ -25,6 +31,12 @@ ALL_COUNTRIES = [
     "UdSSR", "Mongolei",
     "Großbritannien", "USA", "Frankreich", "Kanada", "Südafrika",
     "Indien", "Australien", "Neuseeland", "Mexiko"
+]
+
+AXIS_COUNTRIES = [
+    "Deutschland", "Italien", "Rumänien", "Spanien", "Ungarn",
+    "Bulgarien", "Finnland", "Jugoslawien",
+    "Japan", "Mandschukuo", "Siam"
 ]
 
 MAJOR_COUNTRIES = ["Deutschland", "USA", "UdSSR"]
@@ -64,6 +76,7 @@ async def update_signup_message(guild):
 
     signups = load_data(DATA_FILE)
     coops = load_data(COOPS_FILE)
+    backups = load_data(BACKUP_FILE)
 
     def line(country):
         main_id = next((uid for uid, c in signups.items() if c == country), None)
@@ -106,6 +119,11 @@ async def update_signup_message(guild):
         f"{line('Mexiko')}"
     )
 
+    if backups:
+        content += "\n\n**Backup:**\n"
+        for uid in backups.keys():
+            content += f"<@{uid}>\n"
+
     await message.edit(content=content)
 
 # ================== ROLLENLOGIK ==================
@@ -118,16 +136,54 @@ def get_available_countries(member):
         return SMALL_COUNTRIES + MID_MAJORS
     return SMALL_COUNTRIES
 
+async def update_faction_roles(guild):
+    signups = load_data(DATA_FILE)
+    coops = load_data(COOPS_FILE)
+
+    role_achse = discord.utils.get(guild.roles, name=ROLE_ACHSE)
+    role_allies = discord.utils.get(guild.roles, name=ROLE_ALLIES)
+
+    axis_ids = set()
+    allies_ids = set()
+
+    for uid, country in signups.items():
+        if country in AXIS_COUNTRIES:
+            axis_ids.add(int(uid))
+        else:
+            allies_ids.add(int(uid))
+
+    for country, lst in coops.items():
+        for uid in lst:
+            if country in AXIS_COUNTRIES:
+                axis_ids.add(uid)
+            else:
+                allies_ids.add(uid)
+
+    for member in guild.members:
+        if member.id in axis_ids:
+            await member.add_roles(role_achse)
+            await member.remove_roles(role_allies)
+        elif member.id in allies_ids:
+            await member.add_roles(role_allies)
+            await member.remove_roles(role_achse)
+        else:
+            await member.remove_roles(role_achse, role_allies)
+
 # ================== SIGNUP ==================
 
 class CountrySelect(discord.ui.Select):
-    def __init__(self, user, guild_id):
+    def __init__(self, user, guild):
         self.user = user
-        self.guild_id = guild_id
+        self.guild = guild
         options = [discord.SelectOption(label=c) for c in get_available_countries(user)]
         super().__init__(placeholder="Select your country", options=options)
 
     async def callback(self, interaction):
+        global signup_enabled
+        if not signup_enabled:
+            await interaction.response.send_message("Anmeldung deaktiviert ❌", ephemeral=True)
+            return
+
         signups = load_data(DATA_FILE)
         uid = str(self.user.id)
 
@@ -143,172 +199,54 @@ class CountrySelect(discord.ui.Select):
         signups[uid] = chosen
         save_data(DATA_FILE, signups)
 
-        await update_signup_message(bot.get_guild(self.guild_id))
+        await update_signup_message(self.guild)
+        await update_faction_roles(self.guild)
         await interaction.response.edit_message(content=f"Angemeldet als **{chosen}**.", view=None)
 
 class CountryView(discord.ui.View):
-    def __init__(self, user, guild_id):
+    def __init__(self, user, guild):
         super().__init__(timeout=120)
-        self.add_item(CountrySelect(user, guild_id))
+        self.add_item(CountrySelect(user, guild))
 
 @bot.command()
 async def signup(ctx):
-    await ctx.author.send("Bitte wähle dein Land:", view=CountryView(ctx.author, ctx.guild.id))
+    global signup_enabled
+    if not signup_enabled:
+        await ctx.author.send("Anmeldung deaktiviert ❌")
+        return
+    await ctx.author.send("Bitte wähle dein Land:", view=CountryView(ctx.author, ctx.guild))
     await ctx.message.delete()
 
-# ================== UNSIGN (MAIN + COOP) ==================
+# ================== BACKUP ==================
+
+@bot.command()
+async def backup(ctx):
+    global signup_enabled
+    if not signup_enabled:
+        await ctx.author.send("Anmeldung deaktiviert ❌")
+        return
+
+    backups = load_data(BACKUP_FILE)
+    uid = str(ctx.author.id)
+
+    if uid in backups:
+        await ctx.author.send("Du bist bereits Backup.")
+        return
+
+    backups[uid] = True
+    save_data(BACKUP_FILE, backups)
+    await update_signup_message(ctx.guild)
+    await ctx.author.send("Als Backup eingetragen ✅")
+
+# ================== UNSIGN ==================
 
 @bot.command()
 async def unsign(ctx):
     uid = str(ctx.author.id)
     signups = load_data(DATA_FILE)
     coops = load_data(COOPS_FILE)
+    backups = load_data(BACKUP_FILE)
 
-    removed = False
-
-    if uid in signups:
-        del signups[uid]
-        save_data(DATA_FILE, signups)
-        removed = True
-
-    for country, lst in list(coops.items()):
-        if int(uid) in lst:
-            lst.remove(int(uid))
-            if not lst:
-                del coops[country]
-            removed = True
-
-    save_data(COOPS_FILE, coops)
-
-    if not removed:
-        await ctx.author.send("Du bist weder Main-Spieler noch Coop.")
-        return
-
-    await update_signup_message(ctx.guild)
-    await ctx.author.send("Du wurdest erfolgreich entfernt.")
-
-# ================== COOP ==================
-
-COOP_OPTIONS = {
-    "Deutschland coop 1": "Deutschland",
-    "Deutschland coop 2": "Deutschland",
-    "UdSSR coop 1": "UdSSR",
-    "UdSSR coop 2": "UdSSR",
-    "USA coop 1": "USA",
-    "UK coop 1": "Großbritannien",
-    "Japan coop 1": "Japan",
-    "Italien coop 1": "Italien"
-}
-
-class CoopApprovalView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=300)
-        self.approved = False
-
-    @discord.ui.button(label="Ja", style=discord.ButtonStyle.success)
-    async def yes(self, interaction, button):
-        self.approved = True
-        self.stop()
-        await interaction.response.send_message("Zugestimmt ✅", ephemeral=True)
-
-    @discord.ui.button(label="Nein", style=discord.ButtonStyle.danger)
-    async def no(self, interaction, button):
-        self.stop()
-        await interaction.response.send_message("Abgelehnt ❌", ephemeral=True)
-
-class CoopSelect(discord.ui.Select):
-    def __init__(self, user, guild):
-        self.user = user
-        self.guild = guild
-        options = [discord.SelectOption(label=o) for o in COOP_OPTIONS]
-        super().__init__(placeholder="Wähle deinen Coop-Slot", options=options)
-
-    async def callback(self, interaction):
-        country = COOP_OPTIONS[self.values[0]]
-        signups = load_data(DATA_FILE)
-        coops = load_data(COOPS_FILE)
-
-        main_id = next((uid for uid, c in signups.items() if c == country), None)
-        if not main_id:
-            await interaction.response.send_message("Kein Main-Spieler vorhanden.", ephemeral=True)
-            return
-
-        chef = next((m for m in self.guild.members if ROLE_CHEF in [r.name for r in m.roles]), None)
-        if not chef:
-            await interaction.response.send_message("Kein Chef gefunden.", ephemeral=True)
-            return
-
-        view1 = CoopApprovalView()
-        view2 = CoopApprovalView()
-
-        await self.guild.get_member(int(main_id)).send(f"{interaction.user} möchte Coop bei **{country}** spielen.", view=view1)
-        await chef.send(f"{interaction.user} möchte Coop bei **{country}** spielen.", view=view2)
-
-        await view1.wait()
-        await view2.wait()
-
-        if view1.approved and view2.approved:
-            coops.setdefault(country, []).append(interaction.user.id)
-            save_data(COOPS_FILE, coops)
-            await update_signup_message(self.guild)
-            await interaction.response.send_message("Coop genehmigt ✅", ephemeral=True)
-        else:
-            await interaction.response.send_message("Coop abgelehnt ❌", ephemeral=True)
-
-class CoopView(discord.ui.View):
-    def __init__(self, user, guild):
-        super().__init__(timeout=120)
-        self.add_item(CoopSelect(user, guild))
-
-@bot.command()
-async def coop(ctx):
-    await ctx.author.send("Wähle deinen Coop-Slot:", view=CoopView(ctx.author, ctx.guild))
-    await ctx.message.delete()
-
-# ================== ADMIN COMMANDS ==================
-
-def is_admin(ctx):
-    return ctx.author.guild_permissions.administrator
-
-@bot.command(name="clear")
-async def clear_all(ctx, *, arg=None):
-    if not is_admin(ctx):
-        await ctx.send("Nur Admins können diesen Befehl ausführen.")
-        return
-    if arg != "all":
-        await ctx.send("Verwendung: `!clear all`")
-        return
-
-    save_data(DATA_FILE, {})
-    save_data(COOPS_FILE, {})
-    await update_signup_message(ctx.guild)
-    await ctx.send("Alle Signups und Coops wurden gelöscht ✅")
-
-@bot.command(name="forceadd")
-async def force_add(ctx, member: discord.Member, *, country):
-    if not is_admin(ctx):
-        await ctx.send("Nur Admins können diesen Befehl ausführen.")
-        return
-
-    if country not in ALL_COUNTRIES:
-        await ctx.send(f"Ungültiges Land: {country}")
-        return
-
-    signups = load_data(DATA_FILE)
-    signups[str(member.id)] = country
-    save_data(DATA_FILE, signups)
-    await update_signup_message(ctx.guild)
-    await ctx.send(f"{member} wurde als Main-Spieler von {country} hinzugefügt ✅")
-
-@bot.command(name="forceremove")
-async def force_remove(ctx, member: discord.Member):
-    if not is_admin(ctx):
-        await ctx.send("Nur Admins können diesen Befehl ausführen.")
-        return
-
-    uid = str(member.id)
-    signups = load_data(DATA_FILE)
-    coops = load_data(COOPS_FILE)
     removed = False
 
     if uid in signups:
@@ -322,14 +260,54 @@ async def force_remove(ctx, member: discord.Member):
                 del coops[country]
             removed = True
 
+    if uid in backups:
+        del backups[uid]
+        removed = True
+
     save_data(DATA_FILE, signups)
     save_data(COOPS_FILE, coops)
+    save_data(BACKUP_FILE, backups)
+
     await update_signup_message(ctx.guild)
+    await update_faction_roles(ctx.guild)
 
     if removed:
-        await ctx.send(f"{member} wurde entfernt ✅")
+        await ctx.author.send("Du wurdest entfernt ✅")
     else:
-        await ctx.send(f"{member} war nicht angemeldet ❌")
+        await ctx.author.send("Du warst nicht angemeldet ❌")
+
+# ================== SIGNUP ON / OFF ==================
+
+@bot.command()
+async def signupoff(ctx):
+    global signup_enabled
+    if ROLE_CHEF not in [r.name for r in ctx.author.roles]:
+        return
+    signup_enabled = False
+    await ctx.send("Anmeldungen deaktiviert 🔒")
+
+@bot.command()
+async def signupon(ctx):
+    global signup_enabled
+    if ROLE_CHEF not in [r.name for r in ctx.author.roles]:
+        return
+    signup_enabled = True
+    await ctx.send("Anmeldungen aktiviert ✅")
+
+# ================== GAMEOVER ==================
+
+@bot.command()
+async def gameover(ctx):
+    if ROLE_CHEF not in [r.name for r in ctx.author.roles]:
+        return
+
+    role_achse = discord.utils.get(ctx.guild.roles, name=ROLE_ACHSE)
+    role_allies = discord.utils.get(ctx.guild.roles, name=ROLE_ALLIES)
+
+    for m in ctx.guild.members:
+        await m.remove_roles(role_achse, role_allies)
+
+    await ctx.send("Game beendet – Rollen entfernt 🧹")
 
 # ================== EVENTS ==================
 
@@ -338,4 +316,5 @@ async def on_ready():
     print(f"Logged in as {bot.user}")
 
 bot.run(TOKEN)
+
 
