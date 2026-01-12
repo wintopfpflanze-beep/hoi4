@@ -411,7 +411,8 @@ async def store(ctx):
     # Signups kopieren
     content = await update_signup_message(ctx.guild)  # gibt content zurück
     final_content = (
-        f"Game: {game_number} am {date} (Ingame Zeit: {ingame_time})\n\n"
+        f"Game: {game_number} am {date} 
+        (Ingame Zeit: {ingame_time})\n\n"
         f"Gewinner: {winner}\n"
         f"MVP Achse: {mvp_achse}\n"
         f"MVP Allies: {mvp_allies}\n\n"
