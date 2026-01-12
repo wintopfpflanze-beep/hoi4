@@ -242,6 +242,31 @@ async def clearall(ctx):
     await update_signup_message(guild)
 
     await ctx.send("✅ Alle Anmeldungen und Rollen wurden entfernt.")
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def nachricht(ctx):
+    """Erstellt die Signup-Nachricht neu im definierten Channel."""
+    channel = ctx.guild.get_channel(SIGNUP_CHANNEL_ID)
+    if not channel:
+        await ctx.send("❌ Signup-Kanal nicht gefunden.")
+        return
+
+    # Nachricht zusammenstellen
+    content = ""
+    for faction_name, faction in FACTIONS.items():
+        content += f"**{faction_name}:**\n"
+        for country in faction["countries"]:
+            content += f"{country}:\n"
+        content += "\n"
+
+    # Nachricht senden
+    message = await channel.send(content)
+    
+    # ID speichern (optional, falls du sie für Updates nutzen willst)
+    global SIGNUP_MESSAGE_ID
+    SIGNUP_MESSAGE_ID = message.id
+
+    await ctx.send(f"✅ Signup-Nachricht erstellt im Kanal {channel.mention}.")
 
 # ================== EVENTS ==================
 
