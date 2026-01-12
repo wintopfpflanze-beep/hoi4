@@ -11,26 +11,10 @@ SIGNUP_CHANNEL_ID = 1456720618329210995
 SIGNUP_MESSAGE_ID = 1456964173253574850
 DATA_FILE = "signups.json"
 
-ROLE_KLEINE_MAYORS = "kleine Mayors"
-ROLE_MAYOR_WUERDIG = "Mayor würdig"
-ROLE_CHEF = "chef"
-
-# 🔹 Faction Rollen
 ROLE_AXIS = "Achse"
 ROLE_ALLIES = "Allies"
 ROLE_KOMINTERN = "Komintern"
 ROLE_JAPAN = "Japan und co"
-
-# ================== LÄNDER ==================
-
-ALL_COUNTRIES = [
-    "Deutschland", "Italien", "Rumänien", "Spanien", "Ungarn",
-    "Bulgarien", "Finnland", "Jugoslawien",
-    "Japan", "Mandschukuo", "Siam",
-    "UdSSR", "Mongolei",
-    "Großbritannien", "USA", "Frankreich", "Kanada", "Südafrika",
-    "Indien", "Australien", "Neuseeland", "Mexiko"
-]
 
 # ================== FACTIONS ==================
 
@@ -97,16 +81,12 @@ async def update_signup_message(guild):
         uid = next((u for u, c in data.items() if c == country), None)
         return f"{country}: <@{uid}>" if uid else f"{country}:"
 
-    content = (
-        "**Achsenmächte:**\n"
-        "\n".join(line(c) for c in FACTIONS["Achsenmächte"]["countries"]) +
-        "\n\n**Japan-Team:**\n" +
-        "\n".join(line(c) for c in FACTIONS["Japan-Team"]["countries"]) +
-        "\n\n**Komintern:**\n" +
-        "\n".join(line(c) for c in FACTIONS["Komintern"]["countries"]) +
-        "\n\n**Alliierte:**\n" +
-        "\n".join(line(c) for c in FACTIONS["Alliierte"]["countries"])
-    )
+    content = ""
+    for faction_name, faction in FACTIONS.items():
+        content += f"**{faction_name}:**\n"
+        for c in faction["countries"]:
+            content += line(c) + "\n"
+        content += "\n"
 
     await message.edit(content=content)
 
@@ -117,19 +97,21 @@ class SignupCountrySelect(discord.ui.Select):
         self.user = user
         self.guild = guild
         self.faction = faction
-
         options = [discord.SelectOption(label=c) for c in faction["countries"]]
         super().__init__(placeholder="Wähle dein Land", options=options)
 
     async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user.id:
+            await interaction.response.send_message("❌ Nicht dein Menü.", ephemeral=True)
+            return
+
         data = load_data()
         uid = str(self.user.id)
+        country = self.values[0]
 
         if uid in data:
             await interaction.response.send_message("Du bist bereits angemeldet.", ephemeral=True)
             return
-
-        country = self.values[0]
         if country in data.values():
             await interaction.response.send_message("Land bereits vergeben.", ephemeral=True)
             return
@@ -139,7 +121,7 @@ class SignupCountrySelect(discord.ui.Select):
 
         role = discord.utils.get(self.guild.roles, name=self.faction["role"])
         if role:
-            await self.user.add_roles(role, reason="Signup Faction Rolle")
+            await self.user.add_roles(role, reason="Signup Faction")
 
         await update_signup_message(self.guild)
 
@@ -155,24 +137,30 @@ class FactionSignupView(discord.ui.View):
         self.user = user
         self.guild = guild
 
-        for name, faction in FACTIONS.items():
+        for faction_name, faction in FACTIONS.items():
             btn = discord.ui.Button(
-                label=name,
+                label=faction_name,
                 emoji=faction["emoji"],
                 style=discord.ButtonStyle.primary
             )
-            btn.callback = self.make_callback(faction)
+            btn.callback = self.make_callback(faction_name, faction)
             self.add_item(btn)
 
-    def make_callback(self, faction):
+    def make_callback(self, faction_name, faction):
         async def callback(interaction: discord.Interaction):
+            if interaction.user.id != self.user.id:
+                await interaction.response.send_message("❌ Nicht dein Menü.", ephemeral=True)
+                return
+
             embed = discord.Embed(
-                title=f"{faction['emoji']} {interaction.component.label}",
+                title=f"{faction['emoji']} {faction_name}",
                 description="Wähle dein Land:",
                 color=faction["color"]
             )
+
             view = discord.ui.View()
             view.add_item(SignupCountrySelect(self.user, self.guild, faction))
+
             await interaction.response.edit_message(embed=embed, view=view)
         return callback
 
@@ -200,14 +188,16 @@ async def unsign(ctx):
     del data[uid]
     save_data(data)
 
-    roles_to_remove = [
-        r for r in ctx.guild.roles
-        if r.name in [ROLE_AXIS, ROLE_ALLIES, ROLE_KOMINTERN, ROLE_JAPAN]
-        and r in ctx.author.roles
+    roles = [
+        ROLE_AXIS,
+        ROLE_ALLIES,
+        ROLE_KOMINTERN,
+        ROLE_JAPAN
     ]
 
-    if roles_to_remove:
-        await ctx.author.remove_roles(*roles_to_remove, reason="Unsign")
+    to_remove = [r for r in ctx.guild.roles if r.name in roles and r in ctx.author.roles]
+    if to_remove:
+        await ctx.author.remove_roles(*to_remove, reason="Unsign")
 
     await update_signup_message(ctx.guild)
     await ctx.author.send("❌ Anmeldung aufgehoben & Rollen entfernt.")
