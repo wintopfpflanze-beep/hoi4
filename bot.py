@@ -14,7 +14,9 @@ DATA_FILE = "signups.json"
 ROLE_KLEINE_MAYORS = "kleine Mayors"
 ROLE_MAYOR_WUERDIG = "Mayor würdig"
 ROLE_CHEF = "chef"
-ROLE_ACHSE = "Achse"
+
+# 🔹 Faction Rollen
+ROLE_AXIS = "Achse"
 ROLE_ALLIES = "Allies"
 ROLE_KOMINTERN = "Komintern"
 ROLE_JAPAN = "Japan und co"
@@ -30,40 +32,32 @@ ALL_COUNTRIES = [
     "Indien", "Australien", "Neuseeland", "Mexiko"
 ]
 
-MAJOR_COUNTRIES = ["Deutschland", "USA", "UdSSR"]
-MID_MAJORS = ["Italien", "Großbritannien", "Frankreich", "Japan"]
-
-SMALL_COUNTRIES = [
-    c for c in ALL_COUNTRIES
-    if c not in MAJOR_COUNTRIES and c not in MID_MAJORS
-]
-
-# ================== FACTIONS (NEU – NUR UI) ==================
+# ================== FACTIONS ==================
 
 FACTIONS = {
     "Achsenmächte": {
-        "emoji": "⬛",
-        "color": discord.Color.dark_red(),
+        "emoji": "⚫",
+        "color": discord.Color.dark_grey(),
         "countries": ["Deutschland", "Italien", "Rumänien", "Spanien", "Ungarn", "Bulgarien", "Finnland", "Jugoslawien"],
-        "team_role": ROLE_AXIS
+        "role": ROLE_AXIS
     },
     "Japan-Team": {
-        "emoji": "🟨",
+        "emoji": "🟡",
         "color": discord.Color.gold(),
         "countries": ["Japan", "Mandschukuo", "Siam"],
-        "team_role": ROLE_JAPAN
+        "role": ROLE_JAPAN
     },
     "Komintern": {
-        "emoji": "🟥",
-        "color": discord.Color.purple(),
+        "emoji": "🔴",
+        "color": discord.Color.red(),
         "countries": ["UdSSR", "Mongolei"],
-        "team_role": ROLE_KOMINTERN 
+        "role": ROLE_KOMINTERN
     },
     "Alliierte": {
-        "emoji": "🟦",
+        "emoji": "🔵",
         "color": discord.Color.blue(),
         "countries": ["Großbritannien", "USA", "Frankreich", "Kanada", "Südafrika", "Indien", "Australien", "Neuseeland", "Mexiko"],
-        "team_role": ROLE_ALLIES
+        "role": ROLE_ALLIES
     }
 }
 
@@ -88,69 +82,43 @@ def save_data(data):
 
 # ================== MESSAGE UPDATE ==================
 
-async def update_signup_message(guild, coop_additions=None):
+async def update_signup_message(guild):
     channel = guild.get_channel(SIGNUP_CHANNEL_ID)
     if not channel:
         return
-
     try:
         message = await channel.fetch_message(SIGNUP_MESSAGE_ID)
     except discord.NotFound:
         return
 
     data = load_data()
-    coop_additions = coop_additions or {}
 
     def line(country):
-        main_id = next((uid for uid, c in data.items() if c == country), None)
-        coop_ids = coop_additions.get(country, [])
-
-        if main_id:
-            mentions = [f"<@{main_id}>"] + [f"<@{cid}>" for cid in coop_ids]
-            return f"{country}: " + ", ".join(mentions)
-        return f"{country}:"
+        uid = next((u for u, c in data.items() if c == country), None)
+        return f"{country}: <@{uid}>" if uid else f"{country}:"
 
     content = (
         "**Achsenmächte:**\n"
-        f"{line('Deutschland')}\n"
-        f"{line('Italien')}\n"
-        f"{line('Rumänien')}\n"
-        f"{line('Spanien')}\n"
-        f"{line('Ungarn')}\n"
-        f"{line('Bulgarien')}\n"
-        f"{line('Finnland')}\n"
-        f"{line('Jugoslawien')}\n\n"
-
-        "**Japan-Team:**\n"
-        f"{line('Japan')}\n"
-        f"{line('Mandschukuo')}\n"
-        f"{line('Siam')}\n\n"
-
-        "**Komintern:**\n"
-        f"{line('UdSSR')}\n"
-        f"{line('Mongolei')}\n\n"
-
-        "**Alliierte:**\n"
-        f"{line('Großbritannien')}\n"
-        f"{line('USA')}\n"
-        f"{line('Frankreich')}\n"
-        f"{line('Kanada')}\n"
-        f"{line('Südafrika')}\n"
-        f"{line('Indien')}\n"
-        f"{line('Australien')}\n"
-        f"{line('Neuseeland')}\n"
-        f"{line('Mexiko')}"
+        "\n".join(line(c) for c in FACTIONS["Achsenmächte"]["countries"]) +
+        "\n\n**Japan-Team:**\n" +
+        "\n".join(line(c) for c in FACTIONS["Japan-Team"]["countries"]) +
+        "\n\n**Komintern:**\n" +
+        "\n".join(line(c) for c in FACTIONS["Komintern"]["countries"]) +
+        "\n\n**Alliierte:**\n" +
+        "\n".join(line(c) for c in FACTIONS["Alliierte"]["countries"])
     )
 
     await message.edit(content=content)
 
-# ================== SIGNUP UI (NEU) ==================
+# ================== SIGNUP UI ==================
 
 class SignupCountrySelect(discord.ui.Select):
-    def __init__(self, user, guild, countries):
+    def __init__(self, user, guild, faction):
         self.user = user
         self.guild = guild
-        options = [discord.SelectOption(label=c) for c in countries]
+        self.faction = faction
+
+        options = [discord.SelectOption(label=c) for c in faction["countries"]]
         super().__init__(placeholder="Wähle dein Land", options=options)
 
     async def callback(self, interaction: discord.Interaction):
@@ -169,9 +137,14 @@ class SignupCountrySelect(discord.ui.Select):
         data[uid] = country
         save_data(data)
 
+        role = discord.utils.get(self.guild.roles, name=self.faction["role"])
+        if role:
+            await self.user.add_roles(role, reason="Signup Faction Rolle")
+
         await update_signup_message(self.guild)
+
         await interaction.response.edit_message(
-            content=f"✅ Angemeldet als **{country}**",
+            content=f"✅ Angemeldet als **{country}**\n🎭 Rolle **{self.faction['role']}** erhalten",
             embed=None,
             view=None
         )
@@ -182,34 +155,24 @@ class FactionSignupView(discord.ui.View):
         self.user = user
         self.guild = guild
 
-        for name, data in FACTIONS.items():
-            button = discord.ui.Button(
+        for name, faction in FACTIONS.items():
+            btn = discord.ui.Button(
                 label=name,
-                emoji=data["emoji"],
+                emoji=faction["emoji"],
                 style=discord.ButtonStyle.primary
             )
-            button.callback = self.make_callback(name)
-            self.add_item(button)
+            btn.callback = self.make_callback(faction)
+            self.add_item(btn)
 
-    def make_callback(self, faction_name):
+    def make_callback(self, faction):
         async def callback(interaction: discord.Interaction):
-            faction = FACTIONS[faction_name]
-
             embed = discord.Embed(
-                title=f"{faction['emoji']} {faction_name}",
+                title=f"{faction['emoji']} {interaction.component.label}",
                 description="Wähle dein Land:",
                 color=faction["color"]
             )
-
             view = discord.ui.View()
-            view.add_item(
-                SignupCountrySelect(
-                    self.user,
-                    self.guild,
-                    faction["countries"]
-                )
-            )
-
+            view.add_item(SignupCountrySelect(self.user, self.guild, faction))
             await interaction.response.edit_message(embed=embed, view=view)
         return callback
 
@@ -220,12 +183,34 @@ async def signup(ctx):
         description="Wähle zuerst deine Faction:",
         color=discord.Color.blurple()
     )
-
-    await ctx.author.send(
-        embed=embed,
-        view=FactionSignupView(ctx.author, ctx.guild)
-    )
+    await ctx.author.send(embed=embed, view=FactionSignupView(ctx.author, ctx.guild))
     await ctx.message.delete()
+
+# ================== UNSIGN ==================
+
+@bot.command()
+async def unsign(ctx):
+    data = load_data()
+    uid = str(ctx.author.id)
+
+    if uid not in data:
+        await ctx.author.send("Du bist nicht angemeldet.")
+        return
+
+    del data[uid]
+    save_data(data)
+
+    roles_to_remove = [
+        r for r in ctx.guild.roles
+        if r.name in [ROLE_AXIS, ROLE_ALLIES, ROLE_KOMINTERN, ROLE_JAPAN]
+        and r in ctx.author.roles
+    ]
+
+    if roles_to_remove:
+        await ctx.author.remove_roles(*roles_to_remove, reason="Unsign")
+
+    await update_signup_message(ctx.guild)
+    await ctx.author.send("❌ Anmeldung aufgehoben & Rollen entfernt.")
 
 # ================== EVENTS ==================
 
@@ -234,5 +219,6 @@ async def on_ready():
     print(f"Logged in as {bot.user}")
 
 bot.run(TOKEN)
+
 
 
