@@ -15,6 +15,7 @@ COOPS_FILE = "coops.json"  # <-- neu hinzugefügt
 ROLE_KLEINE_MAYORS = "kleine Mayors"
 ROLE_MAYOR_WUERDIG = "Mayor würdig"
 ROLE_CHEF = "chef"
+ROLE_HOST = "Host"
 
 # ================== LÄNDER ==================
 
@@ -220,15 +221,19 @@ async def signup(ctx):
     )
     await ctx.message.delete()
 
-def is_admin(ctx):
-    return ctx.author.guild_permissions.administrator
+# ================== ROLE CHECK ==================
+
+def is_host(ctx):
+    """Prüft, ob der Benutzer die Rolle 'Host' hat"""
+    host_role = discord.utils.get(ctx.guild.roles, name=ROLE_HOST)
+    return host_role in ctx.author.roles
 
 # ================== ADMIN COMMANDS ==================
 
 @bot.command(name="clear")
 async def clear_all(ctx, *, arg=None):
-    if not is_admin(ctx):
-        await ctx.send("Nur Admins können diesen Befehl ausführen.")
+    if not is_host(ctx):
+        await ctx.send("Nur Hosts können diesen Befehl ausführen.")
         return
     if arg != "all":
         await ctx.send("Verwendung: `!clear all`")
@@ -241,8 +246,8 @@ async def clear_all(ctx, *, arg=None):
 
 @bot.command(name="forceadd")
 async def force_add(ctx, member: discord.Member, *, country):
-    if not is_admin(ctx):
-        await ctx.send("Nur Admins können diesen Befehl ausführen.")
+    if not is_host(ctx):
+        await ctx.send("Nur Hosts können diesen Befehl ausführen.")
         return
 
     if country not in ALL_COUNTRIES:
@@ -257,8 +262,8 @@ async def force_add(ctx, member: discord.Member, *, country):
 
 @bot.command(name="forceremove")
 async def force_remove(ctx, member: discord.Member):
-    if not is_admin(ctx):
-        await ctx.send("Nur Admins können diesen Befehl ausführen.")
+    if not is_host(ctx):
+        await ctx.send("Nur Hosts können diesen Befehl ausführen.")
         return
 
     uid = str(member.id)
@@ -404,6 +409,8 @@ async def on_ready():
     print(f"Logged in as {bot.user}")
 
 bot.run(TOKEN)
+
+
 
 
 
