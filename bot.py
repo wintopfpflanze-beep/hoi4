@@ -10,6 +10,7 @@ PREFIX = "!"
 SIGNUP_CHANNEL_ID = 1456720618329210995
 SIGNUP_MESSAGE_ID = 1460232460787912838
 DATA_FILE = "signups.json"
+COOPS_FILE = "coops.json"  # <-- neu hinzugefügt
 
 ROLE_KLEINE_MAYORS = "kleine Mayors"
 ROLE_MAYOR_WUERDIG = "Mayor würdig"
@@ -68,14 +69,14 @@ bot = commands.Bot(command_prefix=PREFIX, intents=intents)
 
 # ================== DATA ==================
 
-def load_data():
-    if not os.path.exists(DATA_FILE):
+def load_data(file_path):
+    if not os.path.exists(file_path):
         return {}
-    with open(DATA_FILE, "r") as f:
+    with open(file_path, "r") as f:
         return json.load(f)
 
-def save_data(data):
-    with open(DATA_FILE, "w") as f:
+def save_data(file_path, data):
+    with open(file_path, "w") as f:
         json.dump(data, f, indent=4)
 
 # ================== MESSAGE UPDATE ==================
@@ -90,8 +91,8 @@ async def update_signup_message(guild, coop_additions=None):
     except discord.NotFound:
         return
 
-    data = load_data()
-    coop_additions = coop_additions or {}
+    data = load_data(DATA_FILE)
+    coop_additions = coop_additions or load_data(COOPS_FILE)
 
     def line(country):
         main_id = next((uid for uid, c in data.items() if c == country), None)
@@ -146,7 +147,7 @@ class SignupCountrySelect(discord.ui.Select):
         super().__init__(placeholder="Wähle dein Land", options=options)
 
     async def callback(self, interaction: discord.Interaction):
-        data = load_data()
+        data = load_data(DATA_FILE)
         uid = str(self.user.id)
 
         if uid in data:
@@ -159,7 +160,7 @@ class SignupCountrySelect(discord.ui.Select):
             return
 
         data[uid] = country
-        save_data(data)
+        save_data(DATA_FILE, data)
 
         await update_signup_message(self.guild)
         await interaction.response.edit_message(
@@ -218,8 +219,11 @@ async def signup(ctx):
         view=FactionSignupView(ctx.author, ctx.guild)
     )
     await ctx.message.delete()
+
 def is_admin(ctx):
     return ctx.author.guild_permissions.administrator
+
+# ================== ADMIN COMMANDS ==================
 
 @bot.command(name="clear")
 async def clear_all(ctx, *, arg=None):
@@ -267,8 +271,8 @@ async def force_remove(ctx, member: discord.Member):
         removed = True
 
     for country, lst in list(coops.items()):
-        if int(uid) in lst:
-            lst.remove(int(uid))
+        if uid in lst:
+            lst.remove(uid)
             if not lst:
                 del coops[country]
             removed = True
@@ -343,7 +347,7 @@ class CoopSelect(discord.ui.Select):
         await view2.wait()
 
         if view1.approved and view2.approved:
-            coops.setdefault(country, []).append(interaction.user.id)
+            coops.setdefault(country, []).append(str(interaction.user.id))  # IDs als str
             save_data(COOPS_FILE, coops)
             await update_signup_message(self.guild)
             await interaction.response.send_message("Coop genehmigt ✅", ephemeral=True)
@@ -360,7 +364,8 @@ async def coop(ctx):
     await ctx.author.send("Wähle deinen Coop-Slot:", view=CoopView(ctx.author, ctx.guild))
     await ctx.message.delete()
 
-#!unsign
+# ================== UNSIGN ==================
+
 @bot.command()
 async def unsign(ctx):
     uid = str(ctx.author.id)
@@ -369,14 +374,16 @@ async def unsign(ctx):
 
     removed = False
 
+    # Main entfernen
     if uid in signups:
         del signups[uid]
         save_data(DATA_FILE, signups)
         removed = True
 
+    # Coops entfernen
     for country, lst in list(coops.items()):
-        if int(uid) in lst:
-            lst.remove(int(uid))
+        if uid in lst:
+            lst.remove(uid)
             if not lst:
                 del coops[country]
             removed = True
@@ -397,5 +404,6 @@ async def on_ready():
     print(f"Logged in as {bot.user}")
 
 bot.run(TOKEN)
+
 
 
